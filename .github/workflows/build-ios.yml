@@ -1,0 +1,56 @@
+# Compila la app para iOS en un Mac de GitHub y genera un .ipa SIN firmar.
+# Luego lo firmas e instalas en el iPad con AltServer / SideStore (iLoader).
+name: Build iOS (.ipa sin firmar)
+
+on:
+  workflow_dispatch:   # botón "Run workflow" en la pestaña Actions
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Instalar dependencias
+        run: npm install
+
+      - name: Generar proyecto nativo iOS (expo prebuild)
+        run: npx expo prebuild --platform ios --clean
+
+      - name: Compilar sin firmar
+        run: |
+          WORKSPACE=$(ls -d ios/*.xcworkspace | head -n1)
+          SCHEME=$(basename "$WORKSPACE" .xcworkspace)
+          echo "Workspace: $WORKSPACE  Scheme: $SCHEME"
+          xcodebuild \
+            -workspace "$WORKSPACE" \
+            -scheme "$SCHEME" \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            build
+
+      - name: Empaquetar .ipa
+        run: |
+          APP=$(ls -d build/Build/Products/Release-iphoneos/*.app | head -n1)
+          mkdir -p Payload
+          cp -R "$APP" Payload/
+          zip -qr cronometro.ipa Payload
+          ls -lh cronometro.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cronometro-ipa
+          path: cronometro.ipa
